@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uzbek STT</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    max-width: 640px;
+    margin: 48px auto;
+    padding: 0 20px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.sub { color: #888; margin-top: 0; }
+  .controls { display: flex; gap: 12px; margin: 24px 0; flex-wrap: wrap; align-items: center; }
+  button {
+    font-size: 1rem;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    cursor: pointer;
+    background: #f5f5f5;
+  }
+  button.recording { background: #e23; color: white; border-color: #e23; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    font-size: 1rem;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+    resize: vertical;
+  }
+  .status { color: #888; font-size: 0.9rem; min-height: 1.2em; }
+  input[type=file] { font-size: 0.95rem; }
+</style>
+</head>
+<body>
+  <h1>O'zbekcha nutqni matnga o'girish</h1>
+  <p class="sub">Mikrofondan yozib oling yoki audio fayl yuklang</p>
+
+  <div class="controls">
+    <button id="recordBtn">🎙 Yozib olish</button>
+    <input type="file" id="fileInput" accept="audio/*">
+  </div>
+
+  <div class="status" id="status"></div>
+  <textarea id="result" placeholder="Transkripsiya shu yerda chiqadi..." readonly></textarea>
+
+<script>
+const recordBtn = document.getElementById('recordBtn');
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+
+let mediaRecorder;
+let chunks = [];
+let recording = false;
+
+recordBtn.addEventListener('click', async () => {
+  if (!recording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      chunks = [];
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        stream.getTracks().forEach(t => t.stop());
+        sendAudio(blob);
+      };
+      mediaRecorder.start();
+      recording = true;
+      recordBtn.textContent = '⏹ To\'xtatish';
+      recordBtn.classList.add('recording');
+      statusEl.textContent = 'Yozib olinmoqda...';
+    } catch (err) {
+      statusEl.textContent = 'Mikrofonga ruxsat berilmadi: ' + err.message;
+    }
+  } else {
+    mediaRecorder.stop();
+    recording = false;
+    recordBtn.textContent = '🎙 Yozib olish';
+    recordBtn.classList.remove('recording');
+  }
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length > 0) {
+    sendAudio(fileInput.files[0]);
+  }
+});
+
+async function sendAudio(blob) {
+  statusEl.textContent = 'Tanilmoqda...';
+  recordBtn.disabled = true;
+  fileInput.disabled = true;
+  resultEl.value = '';
+
+  const formData = new FormData();
+  formData.append('audio', blob, 'audio.webm');
+
+  try {
+    const res = await fetch('/transcribe', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error('Server xatosi: ' + res.status);
+    const data = await res.json();
+    resultEl.value = data.text;
+    statusEl.textContent = 'Tayyor';
+  } catch (err) {
+    statusEl.textContent = 'Xatolik: ' + err.message;
+  } finally {
+    recordBtn.disabled = false;
+    fileInput.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
